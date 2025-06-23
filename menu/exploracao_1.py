@@ -1,22 +1,19 @@
-# # menu/exploracao.py
+# menu/exploracao.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
 
+# --- INICIO DE LA CORRECCIÓN ---
 def find_best_lag(series_ref, series_comp, max_lag=15):
     """
     Calcula la correlación cruzada entre dos series y encuentra el retardo
-    que maximiza la correlación absoluta.
+    que maximiza la correlación.
     """
     correlations = {}
     for lag in range(-max_lag, max_lag + 1):
-        shifted = series_comp.shift(lag)
-        valid = pd.concat([series_ref, shifted], axis=1).dropna()
-        if valid.shape[0] < 2:
-            continue
-        corr = valid.iloc[:,0].corr(valid.iloc[:,1])
+        corr = series_ref.corr(series_comp.shift(lag))
         if not np.isnan(corr):
             correlations[lag] = corr
 
@@ -60,14 +57,17 @@ def load_data(tickers, period):
             progress_bar.progress(progress_value)
             continue
 
+        # Asegurar que siempre es Serie (no DataFrame)
         price_series = data[price_col]
         if isinstance(price_series, pd.DataFrame):
+            # Si por alguna razón es DataFrame, tomar la primera columna como Serie
             price_series = price_series.iloc[:, 0]
         price_series.name = ticker
 
         if final_df.empty:
             final_df = price_series.to_frame()
         else:
+            # Unir por índice (fecha)
             final_df = final_df.join(price_series, how='outer')
 
         progress_bar.progress(progress_value)
@@ -75,6 +75,8 @@ def load_data(tickers, period):
     status_text.text("¡Descarga completa!")
     progress_bar.empty()
     return final_df
+
+# --- FIN DE LA CORRECCIÓN ---
 
 def render():
     st.title("🔎 Exploración de Correlación con Retardo")
@@ -90,7 +92,6 @@ def render():
         ref_ticker = st.text_input("Acción de Referencia:", "AMZN")
         period = st.selectbox("Período de Análisis:", ["2y", "3y", "5y", "10y"], index=1)
         max_lag = st.slider("Máximo de días de desfase:", min_value=5, max_value=30, value=15)
-        modo = st.selectbox("Tipo de análisis:", ["Rendimientos diarios (%)", "Precio ajustado"])
 
     with col2:
         default_tickers = "MSFT, WMT, FDX, UPS, NVDA, GOOGL, SHOP"
@@ -113,22 +114,18 @@ def render():
                 st.stop()
 
             data_close.dropna(how='all', inplace=True)
+            returns = data_close.pct_change().dropna()
 
-            if modo == "Rendimientos diarios (%)":
-                df_corr = data_close.pct_change().dropna()
-            else:
-                df_corr = data_close.dropna()
-
-            if df_corr.empty or ref_ticker not in df_corr.columns:
-                st.error("No hay suficientes datos para el análisis. Intente con un período más largo o revise los datos descargados.")
+            if returns.empty or ref_ticker not in returns.columns:
+                st.error("No hay suficientes datos para calcular los rendimientos. Intente con un período más largo.")
                 st.stop()
 
-            ref_series = df_corr[ref_ticker]
+            ref_series = returns[ref_ticker]
 
             results = []
             for ticker in comp_tickers:
-                if ticker in df_corr.columns and ticker != ref_ticker:
-                    comp_series = df_corr[ticker]
+                if ticker in returns.columns and ticker != ref_ticker:
+                    comp_series = returns[ticker]
                     best_lag_val, best_corr_val = find_best_lag(ref_series, comp_series, max_lag)
                     results.append({
                         "Acción Comparada": ticker,
@@ -144,7 +141,7 @@ def render():
 
         st.header("2. Resultados del Análisis")
         st.dataframe(results_df.style.format({"Máxima Correlación": "{:.4f}"}), use_container_width=True)
-        st.markdown(f"La tabla muestra el desfase en días que maximiza la correlación de **{ref_ticker}** con las demás acciones. <br>Tipo de análisis: <b>{modo}</b>", unsafe_allow_html=True)
+        st.markdown(f"La tabla muestra el desfase en días que maximiza la correlación entre los rendimientos de **{ref_ticker}** y las demás acciones.")
 
         st.header("3. Visualización Gráfica")
         fig_corr = go.Figure(go.Bar(
@@ -166,42 +163,18 @@ def render():
         ))
         fig_lag.update_layout(title_text=f"Mejor Desfase (días) de cada Acción con {ref_ticker}")
         st.plotly_chart(fig_lag, use_container_width=True)
-        
 
-        st.header("4. Análisis Detallado de la Mejor Relación con Desfase")
-        # Filtrar para quedarnos solo con las correlaciones cuyo mejor desfase sea distinto de cero
-        nonzero_lag = results_df[results_df["Mejor Desfase (días)"] != 0]
-        if not nonzero_lag.empty:
-            # Elegir la de mayor correlación absoluta entre las de lag distinto de cero
-            idx_best = nonzero_lag["Máxima Correlación"].abs().idxmax()
-            best_row = nonzero_lag.loc[idx_best]
-            best_stock = best_row["Acción Comparada"]
-            best_lag_found = best_row["Mejor Desfase (días)"]
-            best_corr = best_row["Máxima Correlación"]
+        st.header("4. Análisis Detallado de la Mejor Relación")
+        if not results_df.empty:
+            best_stock = results_df.iloc[0]["Acción Comparada"]
+            best_lag_found = results_df.iloc[0]["Mejor Desfase (días)"]
 
-            st.markdown(
-                f"La relación **más fuerte con desfase** se encontró con <b>{best_stock}</b>, "
-                f"en <b>{best_lag_found:+d} días</b>, "
-                f"con una correlación de <b>{best_corr:.3f}</b>.",
-                unsafe_allow_html=True
-            )
+            st.markdown(f"La relación más fuerte se encontró con **{best_stock}**, con un desfase de **{best_lag_found} días**.")
 
-            shifted_series = df_corr[best_stock].shift(best_lag_found)
+            shifted_series = returns[best_stock].shift(best_lag_found)
 
             fig_detail = go.Figure()
-            fig_detail.add_trace(go.Scatter(x=df_corr.index, y=ref_series, name=f"{ref_ticker}"))
-            fig_detail.add_trace(go.Scatter(
-                x=df_corr.index,
-                y=shifted_series,
-                name=f"{best_stock} (desfasado {best_lag_found} días)",
-                line=dict(dash='dash')))
-            fig_detail.update_layout(title=f"Comparación: {ref_ticker} vs. {best_stock} (alineado, desfase {best_lag_found:+d} días)")
+            fig_detail.add_trace(go.Scatter(x=returns.index, y=ref_series, name=f"Rendimientos de {ref_ticker}"))
+            fig_detail.add_trace(go.Scatter(x=returns.index, y=shifted_series, name=f"Rendimientos de {best_stock} (desfasado {best_lag_found} días)", line=dict(dash='dash')))
+            fig_detail.update_layout(title=f"Comparación de Rendimientos: {ref_ticker} vs. {best_stock} (alineado)")
             st.plotly_chart(fig_detail, use_container_width=True)
-        else:
-            st.info(
-                "Ninguna acción presentó una correlación máxima relevante con desfase distinto de cero. "
-                "Intenta aumentar el rango de días de desfase o prueba con otros tickers."
-            )
-
-
-        
