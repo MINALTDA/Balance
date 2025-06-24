@@ -162,8 +162,8 @@ with st.sidebar:
         None,  # Remove o título!
         # ["Estratégia", "Universo", "Modelo", "Sinais", "Resultados"],
         # icons=["lightbulb", "layers", "cpu", "activity", "bar-chart-line"],
-        ["Estratégia", "Universo", "Modelo", "Señales", "Resultados", "Simulação"],
-        icons=["lightbulb", "layers", "cpu", "activity", "bar-chart-line", "repeat"],
+        ["Estratégia", "Universo", "Modelo", "Señales", "Resultados", "Simulação", "Exploração", "Quant-IA"],
+        icons=["lightbulb", "layers", "cpu", "activity", "bar-chart-line", "repeat", "search", "robot"],
         menu_icon=None,
         default_index=0,
         styles={
@@ -193,3 +193,10 @@ elif menu == "Resultados":
 elif menu == "Simulação":
     import menu.simulacao as page
     page.show()
+elif menu == "Exploração":
+    import menu.exploracao as page
+    page.show()
+elif menu == "Quant-IA":
+    import menu.quant_ia as page
+    page.show()
+
