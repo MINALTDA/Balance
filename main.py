@@ -10,7 +10,7 @@ BG_COLOR = "#F7F7F9"
 
 # Configuração geral
 st.set_page_config(
-    page_title="VAR Macro Waves – Dashboard Quantitativo",
+    page_title="Trading Lead-Lag",
     page_icon="💹",
     layout="wide",
     initial_sidebar_state="expanded",
